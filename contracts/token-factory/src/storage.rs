@@ -873,23 +873,46 @@ pub fn get_next_stream_id(env: &Env) -> u64 {
     id
 }
 
-// Stream management
-pub fn get_stream_count(env: &Env) -> u32 {
+// ── Governance proposal storage ─────────────────────────────────────────
+
+/// Get proposal count
+pub fn get_proposal_count(env: &Env) -> u32 {
     env.storage()
         .instance()
-        .get(&DataKey::StreamCount)
+        .get(&DataKey::ProposalCount)
         .unwrap_or(0)
 }
 
-pub fn increment_stream_count(env: &Env) {
-    let current = get_stream_count(env);
-    env.storage().instance().set(&DataKey::StreamCount, &(current + 1));
+/// Increment proposal count and return new count
+pub fn increment_proposal_count(env: &Env) -> u32 {
+    let count = get_proposal_count(env);
+    let new_count = count.checked_add(1).expect("Proposal count overflow");
+    env.storage()
+        .instance()
+        .set(&DataKey::ProposalCount, &new_count);
+    new_count
 }
 
-pub fn get_stream(env: &Env, stream_id: &String) -> Option<Stream> {
-    env.storage().persistent().get(&DataKey::Stream(stream_id.clone()))
+/// Get next proposal ID
+pub fn get_next_proposal_id(env: &Env) -> u64 {
+    let id = env.storage()
+        .instance()
+        .get(&DataKey::NextProposalId)
+        .unwrap_or(0_u64);
+    env.storage().instance().set(&DataKey::NextProposalId, &(id + 1));
+    id
 }
 
-pub fn set_stream(env: &Env, stream: &Stream) {
-    env.storage().persistent().set(&DataKey::Stream(stream.stream_id.clone()), stream);
+/// Get proposal by ID
+pub fn get_proposal(env: &Env, proposal_id: u64) -> Option<crate::types::Proposal> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Proposal(proposal_id))
+}
+
+/// Set proposal
+pub fn set_proposal(env: &Env, proposal_id: u64, proposal: &crate::types::Proposal) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::Proposal(proposal_id), proposal);
 }
