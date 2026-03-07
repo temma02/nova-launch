@@ -1873,3 +1873,6 @@ mod stateful_cross_feature_fuzz;
 
 #[cfg(test)]
 mod governance_differential_test;
+
+#[cfg(test)]
+mod event_completeness_test;
