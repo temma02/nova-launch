@@ -1870,3 +1870,6 @@ mod boundary_chaos_test;
 
 #[cfg(test)]
 mod stateful_cross_feature_fuzz;
+
+#[cfg(test)]
+mod governance_differential_test;
