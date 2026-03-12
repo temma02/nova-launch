@@ -19,24 +19,6 @@ proptest = "1.4"
 [features]
 legacy-tests = []
 
-[profile.release]
-opt-level = "z"
-overflow-checks = true
-debug = 0
-strip = "symbols"
-debug-assertions = false
-panic = "abort"
-codegen-units = 1
-lto = true
-
-[profile.release-with-logs]
-inherits = "release"
-debug-assertions = true
-
-[profile.ci]
-inherits = "dev"
-opt-level = 1
-
 # Proptest configuration for CI
 # Ensures deterministic, reproducible property test runs
 [package.metadata.proptest]

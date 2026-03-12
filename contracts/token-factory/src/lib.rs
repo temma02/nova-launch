@@ -1,12 +1,14 @@
 #![no_std]
+#![allow(dead_code)]
+#![allow(unused_imports)]
+#![allow(deprecated)]
+#![allow(unused_must_use)]
 
-mod buyback;
 mod campaign_validation;
 mod freeze_functions;
 mod governance;
 
 mod burn;
-mod buyback;
 mod differential_engine;
 mod event_versions;
 mod events;
@@ -1978,10 +1980,17 @@ impl TokenFactory {
         source_token: Address,
         target_token: Address,
     ) -> Result<u64, Error> {
-        buyback::create_buyback_campaign(
+        creator.require_auth();
+
+        // Allow only factory admin or token creator.
+        let admin = storage::get_admin(&env);
+        let token = storage::get_token_info(&env, token_index).ok_or(Error::TokenNotFound)?;
+        if creator != admin && creator != token.creator {
+            return Err(Error::Unauthorized);
+        }
+
+        campaign_validation::validate_campaign_config(
             &env,
-            &creator,
-            token_index,
             budget,
             start_time,
             end_time,
@@ -1989,7 +1998,43 @@ impl TokenFactory {
             max_slippage_bps,
             &source_token,
             &target_token,
-        )
+        )?;
+
+        if token.address != target_token {
+            return Err(Error::InvalidParameters);
+        }
+
+        let campaign_id = storage::increment_campaign_count(&env)?;
+
+        let owner_index = storage::increment_owner_campaign_count(&env, &creator)?
+            .checked_sub(1)
+            .ok_or(Error::ArithmeticError)?;
+        storage::set_campaign_by_owner(&env, &creator, owner_index, campaign_id);
+        storage::increment_active_campaign_count(&env)?;
+
+        let campaign = types::BuybackCampaign {
+            id: campaign_id,
+            token_index,
+            budget,
+            spent: 0,
+            tokens_bought: 0,
+            execution_count: 0,
+            start_time,
+            end_time,
+            min_interval,
+            max_slippage_bps,
+            source_token,
+            target_token,
+            owner: creator.clone(),
+            status: types::CampaignStatus::Active,
+            created_at: env.ledger().timestamp(),
+            updated_at: env.ledger().timestamp(),
+        };
+
+        storage::set_campaign(&env, campaign_id, &campaign);
+        events::emit_campaign_created(&env, campaign_id, &creator, token_index, budget);
+
+        Ok(campaign_id)
     }
 
     /// Get a buyback campaign by ID
@@ -2005,7 +2050,7 @@ impl TokenFactory {
         env: Env,
         campaign_id: u64,
     ) -> Result<types::BuybackCampaign, Error> {
-        buyback::get_campaign(&env, campaign_id)
+        storage::get_campaign(&env, campaign_id).ok_or(Error::CampaignNotFound)
     }
 }
 

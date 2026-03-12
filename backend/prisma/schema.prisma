@@ -48,6 +48,9 @@ model BurnRecord {
   token Token @relation(fields: [tokenId], references: [id])
 
   @@index([tokenId])
+  @@index([from])
+  @@index([txHash])
+  @@index([timestamp])
 }
 
 model BuybackCampaign {
@@ -83,20 +86,10 @@ model BuybackStep {
   @@index([status])
 }
 
-enum CampaignStatus {
-  ACTIVE
-  COMPLETED
-  CANCELLED
-}
-
 enum StepStatus {
   PENDING
   COMPLETED
   FAILED
-}
-  @@index([from])
-  @@index([txHash])
-  @@index([timestamp])
 }
 
 model User {

@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use soroban_sdk::{self, contracterror, contracttype, Address, Bytes, BytesN, String, Vec};
+use soroban_sdk::{self, contracttype, Address, Bytes, BytesN, String, Vec};
 
 /// Factory state containing administrative configuration
 ///
@@ -151,23 +151,32 @@ pub struct GovernanceConfig {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BuybackCampaign {
     pub id: u64,
-    pub creator: Address,
-    pub token_address: Address,
-    pub total_amount: i128,
-    pub executed_amount: i128,
-    pub current_step: u32,
-    pub total_steps: u32,
+    pub token_index: u32,
+    pub budget: i128,
+    pub spent: i128,
+    pub tokens_bought: i128,
+    pub execution_count: u32,
+    pub start_time: u64,
+    pub end_time: u64,
+    pub min_interval: u64,
+    pub max_slippage_bps: u32,
+    pub source_token: Address,
+    pub target_token: Address,
+    pub owner: Address,
     pub status: CampaignStatus,
     pub created_at: u64,
+    pub updated_at: u64,
 }
 
 /// Campaign status enum
 #[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CampaignStatus {
     Active = 0,
-    Completed = 1,
-    Cancelled = 2,
+    Paused = 1,
+    Completed = 2,
+    Cancelled = 3,
+    Expired = 4,
 }
 
 /// Individual buyback step
@@ -228,20 +237,6 @@ pub struct TokenStats {
     pub freeze_enabled: bool,
 }
 
-/// Buyback campaign configuration and state
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BuybackCampaign {
-    pub token_index: u32,
-    pub total_budget: i128,
-    pub total_spent: i128,
-    pub total_bought: i128,
-    pub total_burned: i128,
-    pub max_spend_per_step: i128,
-    pub execution_count: u32,
-    pub active: bool,
-}
-
 /// Batch fee update structure for Phase 2 optimization
 ///
 /// Allows updating both fees in a single operation, providing
@@ -294,15 +289,12 @@ pub enum DataKey {
     ProposalCount,
     NextProposalId,
     ProposalVote(u64, Address),
-    // Stream management keys
     StreamCount,
     Stream(u32),
-    StreamByCreator(Address, u32),
     TokenStreams(u32),
     TokenStreamCount(u32),
     NextStreamId,
     GovernanceConfig,
-    // Vault management keys
     Vault(u64),
     VaultCount,
     VaultByOwner(Address, u32),
@@ -310,74 +302,95 @@ pub enum DataKey {
     VaultByCreator(Address, u32),
     CreatorVaultCount(Address),
     PendingAdmin,
-    // Buyback campaign keys
     BuybackCampaign(u64),
     BuybackCampaignCount,
-    NextCampaignId,
     CampaignByCreator(Address, u32),
     CreatorCampaignCount(Address),
-    CampaignByToken(u32, u32),
-    TokenCampaignCount(u32),
     ActiveCampaigns,
-    LastExecution(u64),
 }
 
-#[contracterror]
+#[contracttype]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Error {
-    InsufficientFee = 1,
-    Unauthorized = 2,
-    InvalidParameters = 3,
-    TokenNotFound = 4,
-    MetadataAlreadySet = 5,
-    AlreadyInitialized = 6,
-    InsufficientBalance = 7,
-    ArithmeticError = 8,
-    BatchTooLarge = 9,
-    InvalidAmount = 10,
-    ClawbackDisabled = 11,
-    InvalidBurnAmount = 12,
-    BurnAmountExceedsBalance = 13,
-    ContractPaused = 14,
-    InvalidTokenParams = 15,
-    BatchCreationFailed = 16,
-    StreamNotFound = 17,
-    InvalidSchedule = 18,
-    StreamCancelled = 19,
-    CliffNotReached = 20,
-    NothingToClaim = 21,
-    MissingAdmin = 22,
-    MissingTreasury = 23,
-    InvalidBaseFee = 24,
-    InvalidMetadataFee = 25,
-    InconsistentTokenCount = 26,
-    WithdrawalCapExceeded = 27,
-    RecipientNotAllowed = 28,
-    TimelockNotExpired = 29,
-    ChangeAlreadyExecuted = 30,
-    ChangeNotFound = 31,
-    MaxSupplyExceeded = 32,
-    InvalidMaxSupply = 33,
-    MintingDisabled = 34,
-    TokenPaused = 35,
-    FreezeNotEnabled = 36,
-    AddressFrozen = 37,
-    AddressNotFrozen = 38,
-    ProposalInTerminalState = 39,
-    InvalidStateTransition = 40,
-    InvalidTimeWindow = 41,
-    PayloadTooLarge = 42,
-    ProposalNotFound = 43,
-    VotingNotStarted = 44,
-    VotingEnded = 45,
-    VotingClosed = 46,
-    AlreadyVoted = 47,
-    ProposalNotQueued = 48,
-    ProposalCancelled = 49,
-    QuorumNotMet = 50,
-    CampaignNotFound = 51,
-    InvalidBudget = 52,
-    InsufficientBudget = 53,
+pub struct Error(pub u32);
+
+#[allow(non_upper_case_globals)]
+impl Error {
+    pub const InsufficientFee: Self = Self(1);
+    pub const Unauthorized: Self = Self(2);
+    pub const InvalidParameters: Self = Self(3);
+    pub const TokenNotFound: Self = Self(4);
+    pub const MetadataAlreadySet: Self = Self(5);
+    pub const AlreadyInitialized: Self = Self(6);
+    pub const InsufficientBalance: Self = Self(7);
+    pub const ArithmeticError: Self = Self(8);
+    pub const BatchTooLarge: Self = Self(9);
+    pub const InvalidAmount: Self = Self(10);
+    pub const ClawbackDisabled: Self = Self(11);
+    pub const InvalidBurnAmount: Self = Self(12);
+    pub const BurnAmountExceedsBalance: Self = Self(13);
+    pub const ContractPaused: Self = Self(14);
+    pub const InvalidTokenParams: Self = Self(15);
+    pub const BatchCreationFailed: Self = Self(16);
+    pub const StreamNotFound: Self = Self(17);
+    pub const InvalidSchedule: Self = Self(18);
+    pub const StreamCancelled: Self = Self(19);
+    pub const CliffNotReached: Self = Self(20);
+    pub const NothingToClaim: Self = Self(21);
+    pub const MissingAdmin: Self = Self(22);
+    pub const MissingTreasury: Self = Self(23);
+    pub const InvalidBaseFee: Self = Self(24);
+    pub const InvalidMetadataFee: Self = Self(25);
+    pub const InconsistentTokenCount: Self = Self(26);
+    pub const WithdrawalCapExceeded: Self = Self(27);
+    pub const RecipientNotAllowed: Self = Self(28);
+    pub const TimelockNotExpired: Self = Self(29);
+    pub const ChangeAlreadyExecuted: Self = Self(30);
+    pub const ChangeNotFound: Self = Self(31);
+    pub const MaxSupplyExceeded: Self = Self(32);
+    pub const InvalidMaxSupply: Self = Self(33);
+    pub const MintingDisabled: Self = Self(34);
+    pub const TokenPaused: Self = Self(35);
+    pub const FreezeNotEnabled: Self = Self(36);
+    pub const AddressFrozen: Self = Self(37);
+    pub const AddressNotFrozen: Self = Self(38);
+    pub const ProposalInTerminalState: Self = Self(39);
+    pub const InvalidStateTransition: Self = Self(40);
+    pub const InvalidTimeWindow: Self = Self(41);
+    pub const PayloadTooLarge: Self = Self(42);
+    pub const ProposalNotFound: Self = Self(43);
+    pub const VotingNotStarted: Self = Self(44);
+    pub const VotingEnded: Self = Self(45);
+    pub const VotingClosed: Self = Self(46);
+    pub const AlreadyVoted: Self = Self(47);
+    pub const ProposalNotQueued: Self = Self(48);
+    pub const ProposalCancelled: Self = Self(49);
+    pub const QuorumNotMet: Self = Self(50);
+    pub const CampaignNotFound: Self = Self(51);
+    pub const InvalidBudget: Self = Self(52);
+    pub const InsufficientBudget: Self = Self(53);
+}
+
+impl From<Error> for soroban_sdk::Error {
+    fn from(value: Error) -> Self {
+        soroban_sdk::Error::from_contract_error(value.0)
+    }
+}
+
+impl From<&Error> for soroban_sdk::Error {
+    fn from(value: &Error) -> Self {
+        soroban_sdk::Error::from_contract_error(value.0)
+    }
+}
+
+impl From<soroban_sdk::Error> for Error {
+    fn from(value: soroban_sdk::Error) -> Self {
+        if value.is_type(soroban_sdk::xdr::ScErrorType::Contract) {
+            Error(value.get_code())
+        } else {
+            // Preserve compatibility with existing call sites expecting a contract error.
+            Error::InvalidParameters
+        }
+    }
 }
 
 // Buyback error code mapping (reusing existing errors):
@@ -561,58 +574,6 @@ pub struct TreasuryPolicy {
 pub struct WithdrawalPeriod {
     pub period_start: u64,
     pub amount_withdrawn: i128,
-}
-
-/// Buyback campaign status
-#[contracttype]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CampaignStatus {
-    Active,
-    Paused,
-    Completed,
-    Cancelled,
-}
-
-/// Buyback campaign configuration
-///
-/// Represents a token buyback campaign with budget and execution tracking.
-///
-/// # Fields
-/// * `id` - Unique campaign identifier
-/// * `token_index` - Index of the token being bought back
-/// * `creator` - Address that created the campaign
-/// * `budget` - Total budget allocated for buybacks
-/// * `spent` - Amount spent so far
-/// * `tokens_bought` - Number of tokens bought back
-/// * `execution_count` - Number of buyback executions
-/// * `status` - Current campaign status
-/// * `created_at` - Timestamp when campaign was created
-/// * `updated_at` - Timestamp of last update
-/// * `start_time` - When campaign becomes active
-/// * `end_time` - When campaign expires
-/// * `min_interval` - Minimum seconds between executions
-/// * `max_slippage_bps` - Maximum slippage in basis points (0-10000)
-/// * `source_token` - Token being spent (treasury token)
-/// * `target_token` - Token being bought back
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BuybackCampaign {
-    pub id: u64,
-    pub token_index: u32,
-    pub creator: Address,
-    pub budget: i128,
-    pub spent: i128,
-    pub tokens_bought: i128,
-    pub execution_count: u32,
-    pub status: CampaignStatus,
-    pub created_at: u64,
-    pub updated_at: u64,
-    pub start_time: u64,
-    pub end_time: u64,
-    pub min_interval: u64,
-    pub max_slippage_bps: u32,
-    pub source_token: Address,
-    pub target_token: Address,
 }
 
 #[cfg(test)]

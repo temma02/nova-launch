@@ -1292,21 +1292,21 @@ pub fn get_valid_proof(env: &Env, milestone_hash: &soroban_sdk::BytesN<32>) -> O
 pub fn get_campaign(env: &Env, campaign_id: u64) -> Option<crate::types::BuybackCampaign> {
     env.storage()
         .instance()
-        .get(&DataKey::Campaign(campaign_id))
+        .get(&DataKey::BuybackCampaign(campaign_id))
 }
 
 /// Set campaign data
 pub fn set_campaign(env: &Env, campaign_id: u64, campaign: &crate::types::BuybackCampaign) {
     env.storage()
         .instance()
-        .set(&DataKey::Campaign(campaign_id), campaign);
+        .set(&DataKey::BuybackCampaign(campaign_id), campaign);
 }
 
 /// Get total campaign count
 pub fn get_campaign_count(env: &Env) -> u64 {
     env.storage()
         .instance()
-        .get(&DataKey::CampaignCount)
+        .get(&DataKey::BuybackCampaignCount)
         .unwrap_or(0)
 }
 
@@ -1315,7 +1315,9 @@ pub fn increment_campaign_count(env: &Env) -> Result<u64, Error> {
     let count = get_campaign_count(env)
         .checked_add(1)
         .ok_or(Error::ArithmeticError)?;
-    env.storage().instance().set(&DataKey::CampaignCount, &count);
+    env.storage()
+        .instance()
+        .set(&DataKey::BuybackCampaignCount, &count);
     Ok(count)
 }
 
@@ -1323,21 +1325,21 @@ pub fn increment_campaign_count(env: &Env) -> Result<u64, Error> {
 pub fn get_campaign_by_owner(env: &Env, owner: &Address, index: u32) -> Option<u64> {
     env.storage()
         .instance()
-        .get(&DataKey::CampaignByOwner(owner.clone(), index))
+        .get(&DataKey::CampaignByCreator(owner.clone(), index))
 }
 
 /// Set campaign ID for owner at index
 pub fn set_campaign_by_owner(env: &Env, owner: &Address, index: u32, campaign_id: u64) {
     env.storage()
         .instance()
-        .set(&DataKey::CampaignByOwner(owner.clone(), index), &campaign_id);
+        .set(&DataKey::CampaignByCreator(owner.clone(), index), &campaign_id);
 }
 
 /// Get owner's campaign count
 pub fn get_owner_campaign_count(env: &Env, owner: &Address) -> u32 {
     env.storage()
         .instance()
-        .get(&DataKey::OwnerCampaignCount(owner.clone()))
+        .get(&DataKey::CreatorCampaignCount(owner.clone()))
         .unwrap_or(0)
 }
 
@@ -1348,7 +1350,7 @@ pub fn increment_owner_campaign_count(env: &Env, owner: &Address) -> Result<u32,
         .ok_or(Error::ArithmeticError)?;
     env.storage()
         .instance()
-        .set(&DataKey::OwnerCampaignCount(owner.clone()), &count);
+        .set(&DataKey::CreatorCampaignCount(owner.clone()), &count);
     Ok(count)
 }
 
@@ -1356,7 +1358,7 @@ pub fn increment_owner_campaign_count(env: &Env, owner: &Address) -> Result<u32,
 pub fn get_active_campaign_count(env: &Env) -> u32 {
     env.storage()
         .instance()
-        .get(&DataKey::ActiveCampaignCount)
+        .get(&DataKey::ActiveCampaigns)
         .unwrap_or(0)
 }
 
@@ -1364,7 +1366,7 @@ pub fn get_active_campaign_count(env: &Env) -> u32 {
 pub fn set_active_campaign_count(env: &Env, count: u32) {
     env.storage()
         .instance()
-        .set(&DataKey::ActiveCampaignCount, &count);
+        .set(&DataKey::ActiveCampaigns, &count);
 }
 
 /// Increment active campaign count
