@@ -22,46 +22,14 @@ export const CampaignDashboard: React.FC<CampaignDashboardProps> = ({
   const fetchCampaign = async () => {
     try {
       setLoading(true);
-
-      // Prefer backend step data; fall back to chain read if unavailable
-      const backendRes = await fetch(
-        `${BACKEND_URL}/api/buyback/campaigns/${campaignId}/steps`
-      ).catch(() => null);
-
-      if (backendRes?.ok) {
-        const { steps } = await backendRes.json() as {
-          steps: Array<{
-            id: number;
-            stepNumber: number;
-            amount: string;
-            status: 'PENDING' | 'COMPLETED' | 'FAILED';
-            executedAt?: string;
-            txHash?: string;
-          }>;
-          pagination: { total: number; limit: number; offset: number };
-        };
-
-        // Also fetch campaign header from chain for live status/amounts
-        const service = new StellarService(network);
-        const raw = await service.getBuybackCampaign(campaignId);
-        const base = mapBuybackCampaign({ ...raw, steps: [] });
-
-        const mappedSteps: BuybackStepModel[] = steps.map((s) => ({
-          id: s.id,
-          stepNumber: s.stepNumber,
-          amount: s.amount,
-          status: s.status,
-          executedAt: s.executedAt,
-          txHash: s.txHash,
-        }));
-
-        setCampaign({ ...base, steps: mappedSteps });
-      } else {
-        // Full chain read fallback
-        const service = new StellarService(network);
-        const raw = await service.getBuybackCampaign(campaignId);
-        setCampaign(mapBuybackCampaign(raw));
+      const response = await fetch(`/api/campaigns/${campaignId}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch campaign');
       }
+
+      const data = await response.json();
+      setCampaign(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {

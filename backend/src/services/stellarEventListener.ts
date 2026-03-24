@@ -4,7 +4,8 @@ import webhookDeliveryService from "./webhookDeliveryService";
 import { PrismaClient } from "@prisma/client";
 import { GovernanceEventParser } from "./governanceEventParser";
 import governanceEventMapper from "./governanceEventMapper";
-import { campaignEventParser } from "./campaignEventParser";
+import { TokenEventParser, RawTokenEvent } from "./tokenEventParser";
+import { EventCursorStore } from "./eventCursorStore";
 
 const HORIZON_URL =
   process.env.STELLAR_HORIZON_URL || "https://horizon-testnet.stellar.org";
@@ -29,10 +30,14 @@ export class StellarEventListener {
   private lastCursor: string | null = null;
   private prisma: PrismaClient;
   private governanceParser: GovernanceEventParser;
+  private tokenEventParser: TokenEventParser;
+  private cursorStore: EventCursorStore;
 
   constructor() {
     this.prisma = new PrismaClient();
     this.governanceParser = new GovernanceEventParser(this.prisma);
+    this.tokenEventParser = new TokenEventParser(this.prisma);
+    this.cursorStore = new EventCursorStore(this.prisma);
   }
 
   /**
@@ -43,6 +48,10 @@ export class StellarEventListener {
       console.warn("Event listener is already running");
       return;
     }
+
+    // Load durable cursor before starting — resumes from last processed event
+    this.lastCursor = await this.cursorStore.load();
+    console.log(`Resuming from cursor: ${this.lastCursor ?? "origin"}`);
 
     this.isRunning = true;
     console.log("Starting Stellar event listener...");
@@ -102,6 +111,7 @@ export class StellarEventListener {
       for (const event of events) {
         await this.processEvent(event);
         this.lastCursor = event.paging_token;
+        await this.cursorStore.save(this.lastCursor);
       }
     } catch (error) {
       console.error("Error fetching events:", error);
@@ -137,6 +147,12 @@ export class StellarEventListener {
 
       if (!eventData) {
         return;
+      }
+
+      // Persist token projection (idempotent)
+      const rawTokenEvent = this.toRawTokenEvent(event);
+      if (rawTokenEvent) {
+        await this.tokenEventParser.parseEvent(rawTokenEvent);
       }
 
       // Trigger webhooks only if we have a webhook event type
@@ -244,59 +260,56 @@ export class StellarEventListener {
   }
 
   /**
-   * Check if a Stellar event is a buyback campaign event
+   * Map a StellarEvent to a RawTokenEvent for projection, or null if not a token event.
    */
-  private isBuybackEvent(event: StellarEvent): boolean {
-    const buybackTopics = new Set(["bb_created", "bb_executed", "bb_status"]);
-    return event.topic.length > 0 && buybackTopics.has(event.topic[0]);
-  }
+  private toRawTokenEvent(event: StellarEvent): RawTokenEvent | null {
+    const topic0 = event.topic[0];
+    const tokenAddress = event.topic[1] || "";
 
-  /**
-   * Route and parse a buyback campaign event
-   */
-  private async processBuybackEvent(event: StellarEvent): Promise<void> {
-    const topic = event.topic[0];
-    const v = event.value ?? {};
-
-    try {
-      if (topic === "bb_created") {
-        await campaignEventParser.parseCampaignCreated({
-          campaignId: Number(v.campaign_id ?? event.topic[1]),
-          tokenId: v.token_id ?? event.topic[2] ?? "",
-          creator: v.creator ?? "",
-          type: "BUYBACK",
-          targetAmount: BigInt(v.target_amount ?? 0),
-          startTime: new Date(v.start_time ? Number(v.start_time) * 1000 : Date.now()),
-          endTime: v.end_time ? new Date(Number(v.end_time) * 1000) : undefined,
-          metadata: v.metadata,
-          txHash: event.transaction_hash,
-        });
-        console.log(`Ingested buyback campaign created: ${v.campaign_id}`);
-      } else if (topic === "bb_executed") {
-        await campaignEventParser.parseCampaignExecution({
-          campaignId: Number(v.campaign_id ?? event.topic[1]),
-          executor: v.executor ?? "",
-          amount: BigInt(v.amount ?? 0),
-          recipient: v.recipient,
-          txHash: event.transaction_hash,
-          executedAt: new Date(event.ledger_close_time),
-        });
-        console.log(`Ingested buyback step executed: ${event.transaction_hash}`);
-      } else if (topic === "bb_status") {
-        const status = (v.status ?? "").toUpperCase() as
-          | "ACTIVE"
-          | "PAUSED"
-          | "COMPLETED"
-          | "CANCELLED";
-        await campaignEventParser.parseCampaignStatusChange({
-          campaignId: Number(v.campaign_id ?? event.topic[1]),
-          status,
-          txHash: event.transaction_hash,
-        });
-        console.log(`Ingested buyback status change: ${status}`);
-      }
-    } catch (error) {
-      console.error(`Error processing buyback event (${topic}):`, error);
+    switch (topic0) {
+      case "tok_reg":
+        return {
+          type: "tok_reg",
+          tokenAddress,
+          transactionHash: event.transaction_hash,
+          ledger: event.ledger,
+          creator: event.value?.creator || "",
+          name: event.value?.name || "",
+          symbol: event.value?.symbol || "",
+          decimals: event.value?.decimals ?? 7,
+          initialSupply: event.value?.initial_supply?.toString() || "0",
+        };
+      case "tok_burn":
+        return {
+          type: "tok_burn",
+          tokenAddress,
+          transactionHash: event.transaction_hash,
+          ledger: event.ledger,
+          from: event.value?.from || "",
+          amount: event.value?.amount?.toString() || "0",
+          burner: event.value?.burner || event.value?.from || "",
+        };
+      case "adm_burn":
+        return {
+          type: "adm_burn",
+          tokenAddress,
+          transactionHash: event.transaction_hash,
+          ledger: event.ledger,
+          from: event.value?.from || "",
+          amount: event.value?.amount?.toString() || "0",
+          admin: event.value?.admin || "",
+        };
+      case "tok_meta":
+        return {
+          type: "tok_meta",
+          tokenAddress,
+          transactionHash: event.transaction_hash,
+          ledger: event.ledger,
+          metadataUri: event.value?.metadata_uri || "",
+          updatedBy: event.value?.updated_by || "",
+        };
+      default:
+        return null;
     }
   }
 
