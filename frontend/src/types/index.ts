@@ -16,6 +16,7 @@ export interface DeploymentResult {
     transactionHash: string;
     totalFee: string;
     timestamp: number;
+    metadataUrl?: string;
 }
 
 export interface WalletState {
@@ -76,50 +77,104 @@ export const ErrorCode = {
     TIMEOUT_ERROR: 'TIMEOUT_ERROR',
     ACCOUNT_NOT_FOUND: 'ACCOUNT_NOT_FOUND',
     INVALID_SIGNATURE: 'INVALID_SIGNATURE',
-    NOT_IMPLEMENTED: 'NOT_IMPLEMENTED',
+    BURN_FAILED: 'BURN_FAILED',
+    INVALID_AMOUNT: 'INVALID_AMOUNT',
+    UNAUTHORIZED: 'UNAUTHORIZED',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
 
-// Governance types (Issue #617)
-export type ProposalStatus = 'draft' | 'active' | 'passed' | 'failed' | 'executed' | 'cancelled';
-
-export interface GovernanceProposal {
-  id: string;
-  title: string;
-  description: string;
-  status: ProposalStatus;
-  creator: string;
-  createdAt: number;
-  votingEndsAt: number;
-  executedAt?: number;
-  votesFor: string;
-  votesAgainst: string;
-  voteCount: number;
-  voterCount: number;
-  threshold: string;
-  quorum: string;
-  payloadType: string;
-  payload: string;
+// Burn Types
+export interface BurnTokenParams {
+    tokenAddress: string;
+    from: string;
+    amount: string;
 }
 
-export interface GovernanceVote {
-  id: string;
-  proposalId: string;
-  voter: string;
-  support: boolean;
-  weight: string;
-  txHash: string;
-  timestamp: number;
+export interface BurnResult {
+    txHash: string;
+    burnedAmount: string;
+    newBalance: string;
+    newSupply: string;
 }
 
-export interface GovernanceStats {
-  totalProposals: number;
-  activeProposals: number;
-  passedProposals: number;
-  failedProposals: number;
-  executedProposals: number;
-  totalVotes: string;
-  uniqueVoters: number;
-  participationRate: string;
+export interface BurnRecord {
+    id: string;
+    timestamp: number;
+    from: string;
+    amount: string;
+    isAdminBurn: boolean;
+    txHash: string;
+    blockNumber?: number;
+}
+
+// Burn Statistics Types
+export interface BurnStats {
+    totalBurned: string;
+    burnCount: number;
+    initialSupply: string;
+    currentSupply: string;
+    percentBurned: number;
+}
+
+export interface BurnHistoryFilter {
+    startDate?: Date;
+    endDate?: Date;
+    type?: 'all' | 'admin' | 'self';
+    sortBy?: 'timestamp' | 'amount';
+    sortOrder?: 'asc' | 'desc';
+}
+
+export interface BurnChartData {
+    labels: string[];
+    values: number[];
+    cumulative: number[];
+}
+
+// Recurring Payment Types
+export type RecurringPaymentStatus = 'active' | 'due' | 'paused' | 'cancelled';
+
+export type PaymentInterval = 'hourly' | 'daily' | 'weekly' | 'monthly' | 'custom';
+
+export interface RecurringPayment {
+    id: string;
+    recipient: string;
+    amount: string;
+    tokenAddress: string;
+    tokenSymbol?: string;
+    tokenDecimals?: number;
+    memo?: string;
+    interval: PaymentInterval;
+    intervalSeconds: number;
+    nextPaymentTime: number;
+    lastPaymentTime?: number;
+    paymentCount: number;
+    totalPaid: string;
+    status: RecurringPaymentStatus;
+    createdAt: number;
+    creator: string;
+}
+
+export interface RecurringPaymentHistory {
+    id: string;
+    paymentId: string;
+    transactionHash: string;
+    amount: string;
+    timestamp: number;
+    status: 'success' | 'failed';
+}
+
+export interface CreateRecurringPaymentParams {
+    recipient: string;
+    amount: string;
+    tokenAddress: string;
+    memo?: string;
+    interval: PaymentInterval;
+    customIntervalSeconds?: number;
+}
+
+export interface RecurringPaymentFilters {
+    status?: RecurringPaymentStatus;
+    tokenAddress?: string;
+    search?: string;
 }

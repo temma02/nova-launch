@@ -1,307 +1,279 @@
-/**
- * Burn Statistics Component
- * Displays leaderboard data from backend ranking APIs.
- * 
- * Issue: #616 - Connect Leaderboard Screens to Live Backend Ranking APIs
- */
+import React, { useState, useEffect, useCallback } from 'react';
+import { Flame, Hash, Percent, Coins, RefreshCw, AlertCircle } from 'lucide-react';
+import type { BurnStats, BurnRecord, BurnHistoryFilter } from '../../types';
+import { StatCard, StatCardSkeleton } from './StatCard';
+import { BurnHistoryTable } from './BurnHistoryTable';
+import { BurnChart, BurnChartSkeleton } from './BurnChart';
+import { formatTokenAmount, calculatePercentBurned } from './utils';
+import './BurnStatistics.css';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Card } from '../UI/Card';
-import { Spinner } from '../UI/Spinner';
-import { Button } from '../UI/Button';
-import { truncateAddress } from '../../utils/formatting';
-import {
-    fetchLeaderboard,
-    invalidateLeaderboardCache,
-    type LeaderboardEntry,
-    type LeaderboardType,
-    type TimePeriod,
-    normalizeNumeric,
-} from '../../services/leaderboardApi';
-
-export interface BurnStatisticsProps {
-    /** Network mode */
-    network: 'testnet' | 'mainnet';
-    /** Default leaderboard type */
-    defaultType?: LeaderboardType;
-    /** Default time period */
-    defaultPeriod?: TimePeriod;
-    /** Number of entries to display */
-    limit?: number;
-    /** Whether to allow manual refresh */
-    allowRefresh?: boolean;
+interface BurnStatisticsProps {
+  tokenAddress: string;
+  decimals?: number;
+  symbol?: string;
+  className?: string;
 }
 
-/**
- * Available leaderboard tabs
- */
-const LEADERBOARD_TABS: { type: LeaderboardType; label: string }[] = [
-    { type: 'most-burned', label: 'Most Burned' },
-    { type: 'most-active', label: 'Most Active' },
-    { type: 'newest', label: 'Newest' },
-    { type: 'largest-supply', label: 'Largest Supply' },
-    { type: 'most-burners', label: 'Most Burners' },
-];
-
-/**
- * Available time periods
- */
-const TIME_PERIODS: { value: TimePeriod; label: string }[] = [
-    { value: '24h', label: '24 Hours' },
-    { value: '7d', label: '7 Days' },
-    { value: '30d', label: '30 Days' },
-    { value: 'all', label: 'All Time' },
-];
+// Mock service for demo - in production, this would use stellarService
+const mockBurnService = {
+  getTokenInfo: async () => {
+    // Simulate API delay
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    return {
+      total_burned: '15000000000000',
+      burn_count: 42,
+      initial_supply: '1000000000000000',
+      total_supply: '850000000000000',
+      decimals: 0,
+      symbol: 'NOVA',
+    };
+  },
+  getBurnHistory: async () => {
+    // Simulate API delay
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    
+    // Generate mock burn records
+    const records: BurnRecord[] = [];
+    const now = Math.floor(Date.now() / 1000);
+    
+    for (let i = 0; i < 20; i++) {
+      const daysAgo = Math.floor(Math.random() * 30);
+      records.push({
+        id: `burn-${i}`,
+        timestamp: now - daysAgo * 86400 + Math.floor(Math.random() * 86400),
+        from: `G${Math.random().toString(36).substring(2, 12).toUpperCase()}${Math.random().toString(36).substring(2, 44).toUpperCase()}`,
+        amount: String(Math.floor(Math.random() * 1000000000000) + 10000000000),
+        isAdminBurn: Math.random() > 0.7,
+        txHash: `${Math.random().toString(36).substring(2, 64)}`,
+      });
+    }
+    
+    return records.sort((a, b) => b.timestamp - a.timestamp);
+  },
+};
 
 export function BurnStatistics({
-    network,
-    defaultType = 'most-burned',
-    defaultPeriod = '7d',
-    limit = 10,
-    allowRefresh = true,
+  tokenAddress,
+  decimals = 0,
+  symbol = '',
+  className = '',
 }: BurnStatisticsProps) {
-    const [activeTab, setActiveTab] = useState<LeaderboardType>(defaultType);
-    const [period, setPeriod] = useState<TimePeriod>(defaultPeriod);
-    const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [stats, setStats] = useState<BurnStats | null>(null);
+  const [history, setHistory] = useState<BurnRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<BurnHistoryFilter>({});
+  const [refreshing, setRefreshing] = useState(false);
 
-    /**
-     * Fetch leaderboard data from backend API
-     */
-    const fetchData = useCallback(async () => {
-        setLoading(true);
-        setError(null);
+  const loadBurnData = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+    setError(null);
 
-        try {
-            const data = await fetchLeaderboard({
-                type: activeTab,
-                period,
-                limit,
-            });
-            setEntries(data.entries);
-            setLastUpdated(new Date(data.lastUpdated));
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to fetch leaderboard');
-        } finally {
-            setLoading(false);
-        }
-    }, [activeTab, period, limit]);
+    try {
+      const [tokenInfo, burnHistory] = await Promise.all([
+        mockBurnService.getTokenInfo(),
+        mockBurnService.getBurnHistory(),
+      ]);
 
-    // Fetch data when tab or period changes
-    useEffect(() => {
-        fetchData();
-    }, [fetchData]);
+      const percentBurned = calculatePercentBurned(
+        tokenInfo.total_burned,
+        tokenInfo.initial_supply
+      );
 
-    /**
-     * Handle manual refresh - invalidate cache and reload
-     */
-    const handleRefresh = useCallback(() => {
-        invalidateLeaderboardCache();
-        fetchData();
-    }, [fetchData]);
+      setStats({
+        totalBurned: tokenInfo.total_burned,
+        burnCount: tokenInfo.burn_count,
+        initialSupply: tokenInfo.initial_supply,
+        currentSupply: tokenInfo.total_supply,
+        percentBurned,
+      });
 
-    /**
-     * Get column headers based on leaderboard type
-     */
-    const getColumns = (type: LeaderboardType): { key: string; label: string }[] => {
-        switch (type) {
-            case 'most-burned':
-                return [
-                    { key: 'rank', label: '#' },
-                    { key: 'token', label: 'Token' },
-                    { key: 'value', label: 'Total Burned' },
-                    { key: 'change', label: 'Rank Change' },
-                ];
-            case 'most-active':
-                return [
-                    { key: 'rank', label: '#' },
-                    { key: 'token', label: 'Token' },
-                    { key: 'value', label: 'Transactions' },
-                    { key: 'change', label: 'Rank Change' },
-                ];
-            case 'newest':
-                return [
-                    { key: 'rank', label: '#' },
-                    { key: 'token', label: 'Token' },
-                    { key: 'value', label: 'Deployed' },
-                    { key: 'change', label: '-' },
-                ];
-            case 'largest-supply':
-                return [
-                    { key: 'rank', label: '#' },
-                    { key: 'token', label: 'Token' },
-                    { key: 'value', label: 'Total Supply' },
-                    { key: 'change', label: '-' },
-                ];
-            case 'most-burners':
-                return [
-                    { key: 'rank', label: '#' },
-                    { key: 'token', label: 'Token' },
-                    { key: 'value', label: 'Unique Burners' },
-                    { key: 'change', label: 'Rank Change' },
-                ];
-            default:
-                return [];
-        }
-    };
+      setHistory(burnHistory);
+    } catch (err) {
+      console.error('Failed to load burn data:', err);
+      setError('Failed to load burn statistics. Please try again.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [tokenAddress]);
 
-    const columns = getColumns(activeTab);
+  useEffect(() => {
+    loadBurnData();
+  }, [loadBurnData]);
 
-    const explorerUrl = network === 'testnet'
-        ? 'https://stellar.expert/explorer/testnet/contract/'
-        : 'https://stellar.expert/explorer/public/contract/';
+  const handleRefresh = () => {
+    loadBurnData(true);
+  };
 
+  const handleFilterChange = (newFilter: BurnHistoryFilter) => {
+    setFilter(newFilter);
+  };
+
+  if (loading) {
     return (
-        <Card className="p-4">
-            {/* Header with tabs */}
-            <div className="mb-4">
-                <h2 className="text-xl font-bold text-gray-900 mb-4">Burn Statistics</h2>
-                
-                {/* Leaderboard tabs */}
-                <div className="flex flex-wrap gap-2 mb-4">
-                    {LEADERBOARD_TABS.map((tab) => (
-                        <Button
-                            key={tab.type}
-                            variant={activeTab === tab.type ? 'primary' : 'outline'}
-                            size="sm"
-                            onClick={() => setActiveTab(tab.type)}
-                        >
-                            {tab.label}
-                        </Button>
-                    ))}
-                </div>
-
-                {/* Time period filter */}
-                <div className="flex items-center gap-2 mb-4">
-                    <span className="text-sm text-gray-600">Period:</span>
-                    {TIME_PERIODS.map((p) => (
-                        <button
-                            key={p.value}
-                            onClick={() => setPeriod(p.value)}
-                            className={`px-3 py-1 text-sm rounded ${
-                                period === p.value
-                                    ? 'bg-blue-100 text-blue-700'
-                                    : 'text-gray-600 hover:bg-gray-100'
-                            }`}
-                        >
-                            {p.label}
-                        </button>
-                    ))}
-                </div>
-            </div>
-
-            {/* Loading state */}
-            {loading && (
-                <div className="flex justify-center py-8">
-                    <Spinner size="lg" />
-                </div>
-            )}
-
-            {/* Error state */}
-            {error && (
-                <div className="text-center py-8">
-                    <p className="text-red-600 mb-4">{error}</p>
-                    <Button variant="outline" onClick={handleRefresh}>
-                        Try Again
-                    </Button>
-                </div>
-            )}
-
-            {/* Data table */}
-            {!loading && !error && (
-                <div className="overflow-x-auto">
-                    <table className="w-full">
-                        <thead>
-                            <tr className="border-b">
-                                {columns.map((col) => (
-                                    <th
-                                        key={col.key}
-                                        className="px-3 py-2 text-left text-sm font-medium text-gray-600"
-                                    >
-                                        {col.label}
-                                    </th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {entries.map((entry) => (
-                                <tr
-                                    key={entry.tokenAddress}
-                                    className="border-b hover:bg-gray-50"
-                                >
-                                    <td className="px-3 py-3 text-sm">
-                                        <span
-                                            className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
-                                                entry.rank <= 3
-                                                    ? 'bg-yellow-400 text-white'
-                                                    : 'bg-gray-200 text-gray-700'
-                                            }`}
-                                        >
-                                            {entry.rank}
-                                        </span>
-                                    </td>
-                                    <td className="px-3 py-3">
-                                        <div>
-                                            <div className="font-medium text-gray-900">
-                                                {entry.tokenName}
-                                            </div>
-                                            <div className="text-xs text-gray-500">
-                                                {entry.tokenSymbol} • {truncateAddress(entry.tokenAddress)}
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td className="px-3 py-3 text-sm text-gray-900">
-                                        {normalizeNumeric(entry.value)}
-                                    </td>
-                                    <td className="px-3 py-3 text-sm">
-                                        {entry.rankChange !== 0 ? (
-                                            <span
-                                                className={`font-medium ${
-                                                    entry.rankChange > 0
-                                                        ? 'text-green-600'
-                                                        : 'text-red-600'
-                                                }`}
-                                            >
-                                                {entry.rankChange > 0 ? '+' : ''}
-                                                {entry.rankChange}
-                                            </span>
-                                        ) : (
-                                            <span className="text-gray-400">-</span>
-                                        )}
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-
-                    {entries.length === 0 && (
-                        <div className="text-center py-8 text-gray-500">
-                            No data available for this leaderboard
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {/* Footer with refresh and last updated */}
-            <div className="mt-4 flex items-center justify-between text-sm text-gray-500">
-                {lastUpdated && (
-                    <span>
-                        Last updated: {lastUpdated.toLocaleTimeString()}
-                    </span>
-                )}
-                {allowRefresh && (
-                    <button
-                        onClick={handleRefresh}
-                        className="text-gray-500 hover:text-gray-700"
-                    >
-                        🔄 Refresh
-                    </button>
-                )}
-            </div>
-        </Card>
+      <div className={`burn-statistics ${className}`}>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-2xl font-bold text-gray-900">Burn Statistics</h2>
+        </div>
+        
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          {[...Array(4)].map((_, i) => (
+            <StatCardSkeleton key={i} />
+          ))}
+        </div>
+        
+        <BurnChartSkeleton className="mb-6" />
+        
+        <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
+          <div className="space-y-4">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="flex items-center gap-4 animate-pulse">
+                <div className="h-4 bg-gray-200 rounded w-32" />
+                <div className="h-4 bg-gray-200 rounded w-24" />
+                <div className="h-4 bg-gray-200 rounded w-20" />
+                <div className="h-4 bg-gray-200 rounded w-16" />
+                <div className="h-4 bg-gray-200 rounded w-12" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     );
+  }
+
+  if (error) {
+    return (
+      <div className={`burn-statistics ${className}`}>
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-red-800 mb-2">Error Loading Data</h3>
+          <p className="text-red-600 mb-4">{error}</p>
+          <button
+            onClick={handleRefresh}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!stats) {
+    return (
+      <div className={`burn-statistics ${className}`}>
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 text-center">
+          <p className="text-gray-500">No burn data available for this token.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`burn-statistics ${className}`}>
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <h2 className="text-2xl font-bold text-gray-900">Burn Statistics</h2>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+          {refreshing ? 'Refreshing...' : 'Refresh'}
+        </button>
+      </div>
+
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <StatCard
+          title="Total Burned"
+          value={`${formatTokenAmount(stats.totalBurned, decimals)} ${symbol}`}
+          icon={<Flame className="w-6 h-6" />}
+          subtitle="Total tokens burned"
+        />
+        
+        <StatCard
+          title="Burn Count"
+          value={stats.burnCount.toLocaleString()}
+          icon={<Hash className="w-6 h-6" />}
+          subtitle="Number of burn transactions"
+        />
+        
+        <StatCard
+          title="Percent Burned"
+          value={`${stats.percentBurned.toFixed(2)}%`}
+          icon={<Percent className="w-6 h-6" />}
+          subtitle="Of initial supply"
+        />
+        
+        <StatCard
+          title="Current Supply"
+          value={`${formatTokenAmount(stats.currentSupply, decimals)} ${symbol}`}
+          icon={<Coins className="w-6 h-6" />}
+          subtitle="Remaining tokens"
+        />
+      </div>
+
+      {/* Burn Progress Bar */}
+      <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6 mb-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Burn Progress</h3>
+        <div className="relative">
+          <div className="h-4 bg-gray-200 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-orange-500 to-red-500 rounded-full transition-all duration-500"
+              style={{ width: `${Math.min(stats.percentBurned, 100)}%` }}
+            />
+          </div>
+          <div className="flex justify-between mt-2 text-sm text-gray-600">
+            <span>0%</span>
+            <span className="font-medium text-orange-600">{stats.percentBurned.toFixed(2)}%</span>
+            <span>100%</span>
+          </div>
+        </div>
+        <div className="flex justify-between mt-4 text-sm">
+          <div>
+            <span className="text-gray-500">Initial Supply: </span>
+            <span className="font-medium text-gray-900">
+              {formatTokenAmount(stats.initialSupply, decimals)} {symbol}
+            </span>
+          </div>
+          <div>
+            <span className="text-gray-500">Remaining: </span>
+            <span className="font-medium text-gray-900">
+              {formatTokenAmount(stats.currentSupply, decimals)} {symbol}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Burn Chart */}
+      <BurnChart
+        records={history}
+        decimals={decimals}
+        symbol={symbol}
+        className="mb-6"
+      />
+
+      {/* Burn History Table */}
+      <div>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Burns</h3>
+        <BurnHistoryTable
+          records={history}
+          filter={filter}
+          onFilterChange={handleFilterChange}
+          decimals={decimals}
+          symbol={symbol}
+        />
+      </div>
+    </div>
+  );
 }
 
 export default BurnStatistics;
