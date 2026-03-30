@@ -6,6 +6,10 @@
  * Keep this file in sync with contracts/token-factory/src/lib.rs.
  * The ABI drift regression tests in __tests__/factoryAbi.test.ts verify
  * that every entry here matches an exported function name.
+ *
+ * UPGRADE COMPATIBILITY: Before promoting a new contract, run:
+ *   ./scripts/check-upgrade-compatibility.sh <new_contract_id>
+ * See docs/CONTRACT_UPGRADE_COMPATIBILITY.md for the full checklist.
  */
 
 // ---------------------------------------------------------------------------

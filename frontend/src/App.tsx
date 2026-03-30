@@ -5,6 +5,8 @@ import { Spinner, ErrorBoundary } from "./components/UI";
 import { DashboardLayout } from "./components/Layout";
 import { PerformanceDashboard } from "./components/PerformanceDashboard";
 import { PWAUpdateNotification } from "./components/PWA";
+import { IntegrationVersionBanner } from "./components/IntegrationVersionBanner";
+import type { CompatibilityInfo } from "./components/IntegrationVersionBanner";
 
 // Lazy load pages
 const LandingPage = lazy(() => import("./pages/LandingPage"));
@@ -33,7 +35,7 @@ function normalizePath(pathname: string): string {
   return pathname || "/";
 }
 
-function App() {
+function App({ compatibilityInfo }: { compatibilityInfo?: CompatibilityInfo }) {
   const [pathname, setPathname] = useState(() =>
     normalizePath(window.location.pathname)
   );
@@ -125,6 +127,9 @@ function App() {
 
   return (
     <ErrorBoundary>
+      {compatibilityInfo && (
+        <IntegrationVersionBanner info={compatibilityInfo} />
+      )}
       <Suspense fallback={<PageLoader />}>
         <div id="main-content" tabIndex={-1}>
           {page}

@@ -14,6 +14,7 @@ import governanceRoutes from "./routes/governance";
 import campaignRoutes from "./routes/campaigns";
 import streamRoutes from "./routes/streams";
 import vaultRoutes from "./routes/vaults";
+import versionRoutes from "./routes/version";
 import { Database } from "./config/database";
 import { successResponse, errorResponse } from "./utils/response";
 import { requestLoggingMiddleware } from "./middleware/request-logging.middleware";
@@ -67,6 +68,7 @@ app.use("/api/governance", governanceRoutes);
 app.use("/api/campaigns", campaignRoutes);
 app.use("/api/streams", streamRoutes);
 app.use("/api/vaults", vaultRoutes);
+app.use("/api/version", versionRoutes);
 
 import { healthService } from "./lib/health/health.service";
 

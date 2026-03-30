@@ -9,6 +9,12 @@
  *  - Add new topic aliases here; parsers never inspect raw topics.
  *  - Unknown topics are logged and returned as { kind: 'unknown' }.
  *  - Numeric/string field coercions live here, not in parsers.
+ *  - NEVER remove old topic aliases — they may still appear in ledger
+ *    history from the previous contract version.
+ *
+ * UPGRADE COMPATIBILITY: When adding a new event topic, also add it to
+ * TOPIC_KIND and DECODERS below. Run check-upgrade-compatibility.sh to
+ * verify coverage. See docs/CONTRACT_UPGRADE_COMPATIBILITY.md.
  */
 
 export interface RawStellarEvent {

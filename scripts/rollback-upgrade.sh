@@ -67,6 +67,16 @@ else
     exit 1
 fi
 
+# Validate compatibility of the restored contract
+echo ""
+echo -e "${YELLOW}  Running compatibility checks on restored contract...${NC}"
+if ./scripts/check-upgrade-compatibility.sh "$PREVIOUS_CONTRACT" "$NETWORK" 2>/dev/null; then
+    echo -e "${GREEN}✓ Restored contract passes compatibility checks${NC}"
+else
+    echo -e "${YELLOW}⚠ Compatibility checks failed on restored contract — manual review required${NC}"
+    echo -e "${YELLOW}  See docs/CONTRACT_UPGRADE_COMPATIBILITY.md${NC}"
+fi
+
 echo ""
 echo -e "${GREEN}╔════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║      Rollback Complete! ✓              ║${NC}"
